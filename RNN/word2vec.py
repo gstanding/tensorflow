@@ -7,6 +7,8 @@ import zipfile
 import numpy as np
 import urllib
 import tensorflow as tf
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
 
 url = 'http://mattmahoney.net/dc/'
 
@@ -23,7 +25,7 @@ def may_be_download(filename, expected_bytes):
         )
     return filename
 
-
+#download file
 filename = may_be_download('text8.zip', 31344016)
 
 
@@ -32,7 +34,7 @@ def read_data(filename):
         data = tf.compat.as_str(f.read(f.namelist()[0])).split()
     return data
 
-
+#read file and get the words length
 words = read_data(filename)
 print('Data size', len(words))
 
@@ -41,6 +43,14 @@ vocabulary_size = 50000
 
 
 def build_dataset(words):
+    """
+
+    :param words: source words, words list
+    :return: data: count list, count[0] = unk_count
+            count: [[words, count]]
+            dictionary: {word: index} {'UNK': 0}
+            reverse_dictionary: {index: word}
+    """
     count = [['UNK', -1]]
     count.extend(collections.Counter(words).most_common(vocabulary_size - 1))
     dictionary = dict()
@@ -61,6 +71,7 @@ def build_dataset(words):
 
 
 data, count, dictionary, reverse_dictionary = build_dataset(words)
+print('data shape', len(data))
 del words
 print('Most common words (+UNK)', count[:5])
 print('Sample data', data[:10], [reverse_dictionary[i] for i in data[:10]])
@@ -69,6 +80,13 @@ data_index = 0
 
 
 def generate_batch(batch_size, num_skips, skip_window):
+    """
+    :param batch_size: n * num_skips
+    :param num_skips: <= 2 * skip_window
+    :param skip_window: means windows width
+    :return: batch: target words list(index)
+            labels: prediction words list(index)
+    """
     global data_index
     assert batch_size % num_skips == 0
     assert num_skips <= 2 * skip_window
@@ -87,20 +105,21 @@ def generate_batch(batch_size, num_skips, skip_window):
                 target = random.randint(0, span - 1)
             targets_to_avoid.append(target)
             batch[i * num_skips + j] = buffer[skip_window]
-            labels[i * num_skips + j] = buffer[target]
+            labels[i * num_skips + j, 0] = buffer[target]
         buffer.append(data[data_index])
         data_index = (data_index + 1) % len(data)
     return batch, labels
 
 
 batch, labels = generate_batch(batch_size=8, num_skips=2, skip_window=1)
+print('batch shape:', batch.shape, 'label shape:', labels.shape)
 for i in range(8):
     print(batch[i], reverse_dictionary[batch[i]], '->', labels[i, 0],
           reverse_dictionary[labels[i, 0]])
 
 
 batch_size = 128
-embedding_size = 128
+embedding_size = 128# dimension of word vector
 skip_window = 1
 num_skips = 2
 
@@ -108,6 +127,7 @@ num_skips = 2
 valid_size = 16
 valid_window = 100
 valid_examples = np.random.choice(valid_window, valid_size, replace=False)
+#array([29, 26, 65, 39, 52, 79, 38, 46, 13, 94, 91, 11, 88, 15, 37, 62])
 num_sampled = 64
 
 
@@ -119,7 +139,7 @@ with graph.as_default():
 
     with tf.device('/cpu:0'):
         embeddings = tf.Variable(
-            tf.random_uniform([vocabulary_size, embedding_size], -1.0, 1.0))
+            tf.random_uniform([vocabulary_size, embedding_size], -1.0, 1.0))#(50000, 128)
         embed = tf.nn.embedding_lookup(embeddings, train_inputs)
 
         nce_weights = tf.Variable(
@@ -140,7 +160,6 @@ with graph.as_default():
         normalized_embeddings, valid_dataset)
     similarity = tf.matmul(
         valid_embeddings, normalized_embeddings, transpose_b=True)
-
 
     init = tf.global_variables_initializer()
 
@@ -176,4 +195,27 @@ with tf.Session(graph=graph) as session:
                     close_word = reverse_dictionary[nearest[k]]
                     log_str = '%s %s,' %(log_str, close_word)
                 print(log_str)
-        final_embeddings = normalized_embeddings.eval()
+    final_embeddings = normalized_embeddings.eval()
+
+
+def plot_with_labels(low_dim_embs, labels, filename='tsne.png'):
+    assert low_dim_embs.shape[0] >= len(labels), "more labels than embeddings"
+    plt.figure(figsize=(18, 18))
+    for i, label in enumerate(labels):
+        x, y = low_dim_embs[i, :]
+        plt.scatter(x, y)
+        plt.annotate(label,
+                     xy=(x, y),
+                     xytext=(5, 2),
+                     textcoords='offset points',
+                     ha='right',
+                     va='bottom')
+
+    plt.savefig(filename)
+
+
+tsne = TSNE(perplexity=30, n_components=2, init='pca', n_iter=5000)
+plot_only = 100
+low_dim_embs = tsne.fit_transform(final_embeddings[:plot_only, :])
+labels = [reverse_dictionary[i] for i in range(plot_only)]
+plot_with_labels(low_dim_embs, labels)
