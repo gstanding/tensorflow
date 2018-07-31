@@ -162,7 +162,7 @@ class Qnetwork():
         self.Qout = self.Value + tf.subtract(self.Advantages, tf.reduce_mean(
             self.Advantages, reduction_indices=1, keepdims=True
         ))
-        self.predict = tf.argmax(self.Qout)
+        self.predict = tf.argmax(self.Qout, 1)
 
         self.targetQ = tf.placeholder(shape=[None], dtype=tf.float32)
         self.actions = tf.placeholder(shape=[None], dtype=tf.int32)
@@ -210,7 +210,7 @@ def updateTarget(op_holder, sess):
 
 print('1')
 batch_size = 32
-update_fre = 4
+update_freq = 4
 y = .99
 startE = 1
 endE = 0.1
@@ -260,7 +260,7 @@ with tf.Session() as sess:
         while j < max_epLength:
             j += 1
             if np.random.rand(1) < e or total_steps < pre_train_steps:
-                a = np.random.rand(0 ,4)
+                a = np.random.randint(0 ,4)
             else:
                 a = sess.run(mainQN.predict,
                              feed_dict={mainQN.scalarInput: [s]})[0]
@@ -271,7 +271,7 @@ with tf.Session() as sess:
             if total_steps > pre_train_steps:
                 if e > endE:
                     e -= stepDrop
-                if total_steps % (update_fre) == 0:
+                if total_steps % (update_freq) == 0:
                     trainBatch = myBuffer.sample(batch_size)
                     A = sess.run(mainQN.predict, feed_dict={
                         mainQN.scalarInput: np.vstack(trainBatch[:, 3])
