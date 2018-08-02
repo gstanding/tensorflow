@@ -160,9 +160,9 @@ class Qnetwork():
         self.Value = tf.matmul(self.streamV, self.VW)
 
         self.Qout = self.Value + tf.subtract(self.Advantages, tf.reduce_mean(
-            self.Advantages, reduction_indices=1, keep_dims=True
+            self.Advantages, reduction_indices=1, keepdims=True
         ))
-        self.predict = tf.argmax(self.Qout)
+        self.predict = tf.argmax(self.Qout, 1)
 
         self.targetQ = tf.placeholder(shape=[None], dtype=tf.float32)
         self.actions = tf.placeholder(shape=[None], dtype=tf.int32)
@@ -195,7 +195,7 @@ def processState(states):
 
 
 def updateTargetGraph(tfVars, tau):
-    total_vars = len(tfvars)
+    total_vars = len(tfVars)
     op_holder = []
     for idx, var in enumerate(tfVars[0:total_vars//2]):
         op_holder.append(tfVars[idx+total_vars//2].assign((var.value() * tau) +
@@ -208,9 +208,9 @@ def updateTarget(op_holder, sess):
     for op in op_holder:
         sess.run(op)
 
-
+print('1')
 batch_size = 32
-update_fre = 4
+update_freq = 4
 y = .99
 startE = 1
 endE = 0.1
@@ -222,7 +222,7 @@ load_model = False
 path = './dqn'
 h_size = 512
 tau = 0.001
-
+print('2')
 mainQN = Qnetwork(h_size)
 targetQN = Qnetwork(h_size)
 init = tf.global_variables_initializer()
@@ -236,12 +236,13 @@ stepDrop = (startE - endE) / anneling_steps
 
 rList = []
 total_steps = 0
-
+print('3')
 saver = tf.train.Saver()
 if not os.path.exists(path):
     os.makedirs(path)
 
 with tf.Session() as sess:
+    print('4')
     if load_model == True:
         print('Loading Model')
         ckpt = tf.train.get_checkpoint_state(path)
@@ -259,18 +260,18 @@ with tf.Session() as sess:
         while j < max_epLength:
             j += 1
             if np.random.rand(1) < e or total_steps < pre_train_steps:
-                a = np.random.rand(0 ,4)
+                a = np.random.randint(0 ,4)
             else:
                 a = sess.run(mainQN.predict,
                              feed_dict={mainQN.scalarInput: [s]})[0]
             s1, r, d = env.step(a)
             s1 = processState(s1)
             total_steps += 1
-            episodeBuffer.add(np.reshape(np.reshape(np.array([s, a, r, s1, d]), [1, 5])))
+            episodeBuffer.add(np.reshape(np.array([s, a, r, s1, d]), [1, 5]))
             if total_steps > pre_train_steps:
                 if e > endE:
                     e -= stepDrop
-                if total_steps % (update_fre) == 0:
+                if total_steps % (update_freq) == 0:
                     trainBatch = myBuffer.sample(batch_size)
                     A = sess.run(mainQN.predict, feed_dict={
                         mainQN.scalarInput: np.vstack(trainBatch[:, 3])
@@ -280,7 +281,7 @@ with tf.Session() as sess:
                     })
                     doubleQ = Q[range(batch_size), A]
                     targetQ = trainBatch[:, 2] + y*doubleQ
-                    _ = sess.run(mainQN.updateModel,feed_dict={
+                    _ = sess.run(mainQN.updateModel, feed_dict={
                         mainQN.scalarInput: np.vstack(trainBatch[:, 0]),
                         mainQN.targetQ: targetQ,
                         mainQN.actions: trainBatch[:, 1]
