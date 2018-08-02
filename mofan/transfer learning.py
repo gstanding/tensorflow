@@ -26,8 +26,6 @@ def download():
                 except:
                     print('%s %i/%i' % (category, i, n_urls), 'no_image')
 
-download()
-
 
 def load_image(path):
     img = skimage.io.imread(path)
@@ -36,14 +34,18 @@ def load_image(path):
     yy = int((img.shape[0] - short_edge) / 2)
     xx = int((img.shape[1] - short_edge) / 2)
     crop_img = img[yy: yy + short_edge, xx: xx + short_edge]
-    resized_image = skimage.transform.resize(crop_img, (224, 224))[None, :, :, :]
-    return resized_image
+    if len(crop_img.shape) == 3:
+        resized_image = skimage.transform.resize(crop_img, (224, 224))[None, :, :, :]
+        #print(resized_image.shape)
+        return resized_image
+    else:
+        print(path, 'error')
 
 
 def load_data():
     imgs = {'tiger': [], 'kittycat': []}
     for k in imgs.keys():
-        dir = '.for_transfer_learning/data'
+        dir = './for_transfer_learning/data/' + k
         for file in os.listdir(dir):
             if not file.lower().endswith('.jpg'):
                 continue
@@ -88,19 +90,20 @@ class Vgg16:
 
         conv3_1 = self.conv_layer(pool2, 'conv3_1')
         conv3_2 = self.conv_layer(conv3_1, 'conv3_2')
-        conv3_3 = self.max_pool(conv3_2, 'conv3_3')
+        conv3_3 = self.conv_layer(conv3_2, 'conv3_3')
         pool3 = self.max_pool(conv3_3, 'pool3')
 
         conv4_1 = self.conv_layer(pool3, 'conv4_1')
         conv4_2 = self.conv_layer(conv4_1, 'conv4_2')
-        conv4_3 = self.max_pool(conv4_2, 'conv4_3')
+        conv4_3 = self.conv_layer(conv4_2, 'conv4_3')
         pool4 = self.max_pool(conv4_3, 'pool4')
 
         conv5_1 = self.conv_layer(pool4, 'conv5_1')
         conv5_2 = self.conv_layer(conv5_1, 'conv5_2')
-        conv5_3 = self.max_pool(conv5_2, 'conv5_3')
+        conv5_3 = self.conv_layer(conv5_2, 'conv5_3')
         pool5 = self.max_pool(conv5_3, 'pool5')
 
+        print('pool5: shape', pool5.shape)
         self.flatten = tf.reshape(pool5, [-1, 7*7*512])
         self.fc6 = tf.layers.dense(self.flatten, 256, tf.nn.relu, name='fc6')
         self.out = tf.layers.dense(self.fc6, 1, name='out')
@@ -136,7 +139,7 @@ class Vgg16:
             axs[i].imshow(x[0])
             axs[i].set_title('Len: %.1f cm' % length)
             axs[i].set_xticks(())
-            axs[i].set_ystcks(())
+            axs[i].set_yticks(())
         plt.show()
 
     def save(self, path='./for_transfer_learning/model/transfer_learn'):
@@ -146,9 +149,56 @@ class Vgg16:
 
 def train():
     tigers_x, cats_x, tigers_y, cats_y = load_data()
-
+    #print(tigers_y)
     plt.hist(tigers_y, bins=20, label='Tigers')
     plt.hist(cats_y, bins=10, label='Cats')
     plt.legend()
     plt.xlabel('length')
     plt.show()
+
+    xs = np.concatenate(tigers_x + cats_x, axis=0)
+    ys = np.concatenate((tigers_y, cats_y), axis=0)
+    print(xs.shape)
+    print(ys.shape)
+    vgg = Vgg16(vgg_npy_path='./for_transfer_learning/vgg16.npy')
+    print('Net built')
+    for i in range(100):
+        b_idx = np.random.randint(0, len(xs), 6)
+        print(b_idx)
+        train_loss = vgg.train(xs[b_idx], ys[b_idx])
+        print(i, 'train loss: ', train_loss)
+
+    vgg.save('./for_transfer_learning/model/transfer_learn')
+
+
+def eval():
+    vgg = Vgg16(vgg_npy_path='./for_transfer_learning/vgg16.npy',
+                restore_from='./for_transfer_learning/model/transfer_learn')
+    vgg.predict(
+        ['./for_transfer_learning/data/kittycat/020.jpg', './for_transfer_learning/data/tiger/02027.jpg']
+    )
+
+
+if __name__ == '__main__':
+    # download()
+    # train()
+    # eval()
+    data_dict = np.load('./for_transfer_learning/vgg16.npy', encoding='latin1').item()
+    print('conv1_1: ', data_dict['conv1_1'][0].shape, data_dict['conv1_1'][1].shape)
+    print('conv1_2: ', data_dict['conv1_2'][0].shape, data_dict['conv1_2'][1].shape)
+    print('conv2_1: ', data_dict['conv2_1'][0].shape, data_dict['conv2_1'][1].shape)
+    print('conv2_2: ', data_dict['conv2_2'][0].shape, data_dict['conv2_2'][1].shape)
+    print('conv3_1: ', data_dict['conv3_1'][0].shape, data_dict['conv3_1'][1].shape)
+    print('conv3_2: ', data_dict['conv3_2'][0].shape, data_dict['conv3_2'][1].shape)
+    print('conv3_3: ', data_dict['conv3_3'][0].shape, data_dict['conv3_3'][1].shape)
+    print('conv4_1: ', data_dict['conv4_1'][0].shape, data_dict['conv4_1'][1].shape)
+    print('conv4_2: ', data_dict['conv4_2'][0].shape, data_dict['conv4_2'][1].shape)
+    print('conv4_3: ', data_dict['conv4_3'][0].shape, data_dict['conv4_3'][1].shape)
+    print('conv5_1: ', data_dict['conv5_1'][0].shape, data_dict['conv5_1'][1].shape)
+    print('conv5_2: ', data_dict['conv5_2'][0].shape, data_dict['conv5_2'][1].shape)
+    print('conv5_3: ', data_dict['conv5_3'][0].shape, data_dict['conv5_3'][1].shape)
+    print('fc6: ', data_dict['fc6'][0].shape, data_dict['fc6'][1].shape)
+    print('fc7: ', data_dict['fc7'][0].shape, data_dict['fc7'][1].shape)
+    print('fc8: ', data_dict['fc8'][0].shape, data_dict['fc8'][1].shape)
+
+
